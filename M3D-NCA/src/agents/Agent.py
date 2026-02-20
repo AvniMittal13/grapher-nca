@@ -177,6 +177,71 @@ class BaseAgent():
         self.optimizer.load_state_dict(torch.load(os.path.join(model_path, 'optimizer.pth')))
         self.scheduler.load_state_dict(torch.load(os.path.join(model_path, 'scheduler.pth')))
 
+    def _gpu_mem_str(self):
+        r"""Return a GPU memory string showing allocated/reserved MB, or empty string on CPU."""
+        device_str = self.exp.get_from_config('device')
+        if not torch.cuda.is_available():
+            return ''
+        dev = torch.device(device_str)
+        if dev.type != 'cuda':
+            return ''
+        idx = dev.index if dev.index is not None else torch.cuda.current_device()
+        alloc  = torch.cuda.memory_allocated(idx)  / 1024**2
+        reserv = torch.cuda.memory_reserved(idx)   / 1024**2
+        return f'  gpu={alloc:.0f}/{reserv:.0f}MB(alloc/res)'
+
+    def _save_training_samples(self, raw_data, epoch, n_samples=2):
+        r"""Save n_samples input / prediction / target PNG files to model_path/samples/epoch_N/.
+            Uses the first training batch captured at the start of the epoch.
+        """
+        if raw_data is None:
+            return
+        try:
+            samples_dir = os.path.join(
+                self.exp.get_from_config('model_path'), 'samples', f'epoch_{epoch}'
+            )
+            os.makedirs(samples_dir, exist_ok=True)
+
+            # raw_data is (ids, imgs, labels) as CPU tensors from the DataLoader
+            _, raw_imgs, _ = raw_data
+            raw_imgs_np = raw_imgs.numpy()           # [B, H, W, C]  original image
+
+            with torch.no_grad():
+                data_prep = self.prepare_data(raw_data, eval=True)
+                outputs, targets = self.get_outputs(data_prep, full_img=True)
+                outputs_np = torch.sigmoid(outputs).detach().cpu().numpy()  # [B, H, W, 1]
+                targets_np = targets.detach().cpu().numpy()                 # [B, H, W, 1]
+
+            n = min(n_samples, raw_imgs_np.shape[0])
+            for i in range(n):
+                fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+                inp = raw_imgs_np[i]
+                if inp.shape[-1] >= 3:
+                    axes[0].imshow(np.clip(inp[..., :3], 0, 1))
+                else:
+                    axes[0].imshow(inp[..., 0], cmap='gray', vmin=0, vmax=1)
+                axes[0].set_title('Input')
+                axes[0].axis('off')
+
+                axes[1].imshow(outputs_np[i, ..., 0], cmap='gray', vmin=0, vmax=1)
+                axes[1].set_title('Prediction (sigmoid)')
+                axes[1].axis('off')
+
+                axes[2].imshow(targets_np[i, ..., 0], cmap='gray', vmin=0, vmax=1)
+                axes[2].set_title('Target')
+                axes[2].axis('off')
+
+                plt.suptitle(f'Epoch {epoch}  |  Sample {i}', fontsize=10)
+                plt.tight_layout()
+                plt.savefig(os.path.join(samples_dir, f'sample_{i}.png'),
+                            dpi=80, bbox_inches='tight')
+                plt.close(fig)
+
+            print(f'  [samples] {n} PNG(s) → {samples_dir}')
+        except Exception as e:
+            print(f'  [samples] warning: {e}')
+
     def train(self, dataloader, loss_f):
         r"""Execute training of model
             #Args
@@ -184,9 +249,20 @@ class BaseAgent():
                 loss_f (nn.Model): The loss for training"""
         import time
         n_batches = len(dataloader)
-        n_epochs = self.exp.get_max_steps()
+        n_epochs  = self.exp.get_max_steps()
+        device_str = self.exp.get_from_config('device')
+
+        # ── Device info ──────────────────────────────────────────────────────
+        print(f'Device: {device_str}')
+        if torch.cuda.is_available() and torch.device(device_str).type == 'cuda':
+            idx   = torch.device(device_str).index or 0
+            props = torch.cuda.get_device_properties(idx)
+            print(f'GPU:    {props.name}  |  VRAM total: {props.total_memory / 1024**3:.1f} GB')
+        else:
+            print('GPU:    not used (CPU mode)')
         print(f'Training: {n_epochs} epochs | {len(dataloader.dataset)} samples | {n_batches} batches/epoch')
         print('-' * 60)
+
         for epoch in range(self.exp.currentStep, n_epochs + 1):
             t0 = time.time()
             loss_log = {}
@@ -198,21 +274,24 @@ class BaseAgent():
                 lr = self.optimizer[0].param_groups[0]['lr']
             else:
                 lr = self.optimizer.param_groups[0]['lr']
-            print(f'\nEpoch {epoch}/{n_epochs}  lr={lr:.2e}')
+            print(f'\nEpoch {epoch}/{n_epochs}  lr={lr:.2e}{self._gpu_mem_str()}')
 
+            first_batch = None
             for i, data in enumerate(dataloader):
+                if i == 0:
+                    first_batch = data          # capture for per-epoch sample saving
                 loss_item = self.batch_step(data, loss_f)
                 for key in loss_item.keys():
                     loss_log[key].append(loss_item[key])
 
-                if (i + 1) % 10 == 0 or (i + 1) == n_batches:
-                    running = {k: sum(loss_log[k]) / len(loss_log[k]) for k in loss_log if loss_log[k]}
-                    loss_str = '  '.join(f'loss[{k}]={v:.4f}' for k, v in running.items())
-                    print(f'  batch {i+1}/{n_batches}  {loss_str}')
+                # Print every batch
+                running  = {k: sum(loss_log[k]) / len(loss_log[k]) for k in loss_log if loss_log[k]}
+                loss_str = '  '.join(f'loss[{k}]={v:.4f}' for k, v in running.items())
+                print(f'  batch {i+1}/{n_batches}  {loss_str}{self._gpu_mem_str()}')
 
             elapsed = time.time() - t0
             self.intermediate_results(epoch, loss_log)
-            print(f'  epoch time: {elapsed:.1f}s')
+            print(f'  ── epoch {epoch} done: {elapsed:.1f}s{self._gpu_mem_str()}')
 
             if epoch % self.exp.get_from_config('evaluate_interval') == 0:
                 print("  [eval] running intermediate evaluation...")
@@ -223,6 +302,9 @@ class BaseAgent():
             if epoch % self.exp.get_from_config('save_interval') == 0:
                 print(f'  [save] model saved at epoch {epoch}')
                 self.save_state(os.path.join(self.exp.get_from_config('model_path'), 'models', 'epoch_' + str(self.exp.currentStep)))
+
+            self._save_training_samples(first_batch, epoch)
+
             self.conclude_epoch()
             self.exp.increase_epoch()
 
