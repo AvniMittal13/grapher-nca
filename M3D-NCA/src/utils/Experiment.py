@@ -76,11 +76,9 @@ class Experiment():
         r"""Reload old experiment to continue training
             TODO: Add functionality to load any previous saved step
         """
-        # TODO: Proper reload
         print(os.path.join(self.config['model_path'], 'data_split.dt'))
         self.data_split = load_pickle_file(os.path.join(self.config['model_path'], 'data_split.dt'))
-        self.projectConfig = load_json_file(os.path.join(self.config['model_path'], 'config.dt'))
-        self.config = self.projectConfig[0]
+        # config intentionally NOT reloaded — user's notebook config takes precedence
         model_path = os.path.join(self.config['model_path'], 'models', 'epoch_' + str(self.currentStep))
         print(model_path)
         if os.path.exists(model_path):
