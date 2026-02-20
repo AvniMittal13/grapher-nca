@@ -1,0 +1,6 @@
+*.pyc
+runs/
+html/
+M:/Models/*
+Models/*
+Study/*

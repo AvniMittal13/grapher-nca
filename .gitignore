@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+papers/
+GrapherNCA/
+GrapherNCA.zip
+/datasets/
+/Models/
+*.pth
+*.dt
+image.png
+.DS_Store
+.claude/
