@@ -1,7 +1,7 @@
 import os
 import torch
 from src.utils.helper import dump_json_file, load_json_file, dump_pickle_file, load_pickle_file
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 class Experiment():
     r"""This class handles:
@@ -110,7 +110,7 @@ class Experiment():
         """
         self.currentStep = self.current_step()
         self.set_size()
-        self.writer = SummaryWriter(log_dir=os.path.join(self.get_from_config('model_path'), 'tensorboard', os.path.basename(self.get_from_config('model_path'))))
+        # self.writer = SummaryWriter(log_dir=os.path.join(self.get_from_config('model_path'), 'tensorboard', os.path.basename(self.get_from_config('model_path'))))
         self.set_current_config()
         self.agent.set_exp(self)
         if self.currentStep == 0:
