@@ -77,7 +77,17 @@ class Experiment():
             TODO: Add functionality to load any previous saved step
         """
         print(os.path.join(self.config['model_path'], 'data_split.dt'))
-        self.data_split = load_pickle_file(os.path.join(self.config['model_path'], 'data_split.dt'))
+        # Load previous data_split if present
+        try:
+            self.data_split = load_pickle_file(os.path.join(self.config['model_path'], 'data_split.dt'))
+        except Exception:
+            self.data_split = None
+        # Regenerate data split to ensure it matches current filesystem and dataset filters
+        # This avoids stale entries (e.g., non-image files) that may have been present when the pickle was created.
+        try:
+            self.data_split = self.new_datasplit()
+        except Exception as e:
+            print('Warning: failed to regenerate data split during reload:', e)
         # config intentionally NOT reloaded — user's notebook config takes precedence
         model_path = os.path.join(self.config['model_path'], 'models', 'epoch_' + str(self.currentStep))
         print(model_path)
