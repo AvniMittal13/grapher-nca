@@ -82,10 +82,13 @@ class Experiment():
             self.data_split = load_pickle_file(os.path.join(self.config['model_path'], 'data_split.dt'))
         except Exception:
             self.data_split = None
-        # Regenerate data split to ensure it matches current filesystem and dataset filters
-        # This avoids stale entries (e.g., non-image files) that may have been present when the pickle was created.
+        # Regenerate data split to ensure it matches current filesystem and dataset filters.
+        # This fixes stale pickles that contain non-image files (e.g. ATTRIBUTION.txt) from
+        # earlier runs before the extension filter was added to getFilesInPath.
         try:
             self.data_split = self.new_datasplit()
+            # Overwrite the stale pickle so subsequent sessions don't need to regenerate
+            dump_pickle_file(self.data_split, os.path.join(self.config['model_path'], 'data_split.dt'))
         except Exception as e:
             print('Warning: failed to regenerate data split during reload:', e)
         # config intentionally NOT reloaded — user's notebook config takes precedence
