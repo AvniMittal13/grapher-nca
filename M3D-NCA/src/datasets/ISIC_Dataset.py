@@ -36,17 +36,6 @@ class ISIC2018_Dataset(Dataset_Base):
                 # Not an image extension -> skip
                 continue
 
-            # Defensive: ensure the file is a readable image (skip corrupted/non-image files)
-            full_path = os.path.join(path, f)
-            try:
-                img_try = cv2.imread(full_path)
-                if img_try is None:
-                    # Could not read as image -> skip
-                    continue
-            except Exception:
-                # Any read error -> skip this file
-                continue
-
             # Extract patient ID (e.g., ISIC_0000000 from ISIC_0000000.jpg or ISIC_0000000_segmentation.png)
             patient_id = f.split('_segmentation')[0]
             patient_id = os.path.splitext(patient_id)[0]
