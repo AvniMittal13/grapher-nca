@@ -113,9 +113,11 @@ class BaseAgent():
         for key in loss_log.keys():
             if len(loss_log[key]) != 0:
                 average_loss = sum(loss_log[key]) / len(loss_log[key])
+                min_loss = min(loss_log[key])
+                max_loss = max(loss_log[key])
             else:
-                average_loss = 0
-            print(epoch, "loss =", average_loss)
+                average_loss = min_loss = max_loss = 0
+            print(f'  [mask {key}]  avg={average_loss:.4f}  min={min_loss:.4f}  max={max_loss:.4f}')
             self.exp.write_scalar('Loss/train/' + str(key), average_loss, epoch)
 
     def plot_results_byPatient(self, loss_log):
@@ -180,26 +182,46 @@ class BaseAgent():
             #Args
                 dataloader (Dataloader): contains training data
                 loss_f (nn.Model): The loss for training"""
-        for epoch in range(self.exp.currentStep, self.exp.get_max_steps()+1):
-            print("Epoch: " + str(epoch))
+        import time
+        n_batches = len(dataloader)
+        n_epochs = self.exp.get_max_steps()
+        print(f'Training: {n_epochs} epochs | {len(dataloader.dataset)} samples | {n_batches} batches/epoch')
+        print('-' * 60)
+        for epoch in range(self.exp.currentStep, n_epochs + 1):
+            t0 = time.time()
             loss_log = {}
             for m in range(self.output_channels):
                 loss_log[m] = []
             self.initialize_epoch()
-            print('Dataset size: ' + str(len(dataloader)))
+
+            if isinstance(self.optimizer, list):
+                lr = self.optimizer[0].param_groups[0]['lr']
+            else:
+                lr = self.optimizer.param_groups[0]['lr']
+            print(f'\nEpoch {epoch}/{n_epochs}  lr={lr:.2e}')
+
             for i, data in enumerate(dataloader):
                 loss_item = self.batch_step(data, loss_f)
                 for key in loss_item.keys():
                     loss_log[key].append(loss_item[key])
+
+                if (i + 1) % 10 == 0 or (i + 1) == n_batches:
+                    running = {k: sum(loss_log[k]) / len(loss_log[k]) for k in loss_log if loss_log[k]}
+                    loss_str = '  '.join(f'loss[{k}]={v:.4f}' for k, v in running.items())
+                    print(f'  batch {i+1}/{n_batches}  {loss_str}')
+
+            elapsed = time.time() - t0
             self.intermediate_results(epoch, loss_log)
+            print(f'  epoch time: {elapsed:.1f}s')
+
             if epoch % self.exp.get_from_config('evaluate_interval') == 0:
-                print("Evaluate model")
+                print("  [eval] running intermediate evaluation...")
                 self.intermediate_evaluation(dataloader, epoch)
             #if epoch % self.exp.get_from_config('ood_interval') == 0:
             #    print("Evaluate model in OOD cases")
             #    self.ood_evaluation(epoch=epoch)
             if epoch % self.exp.get_from_config('save_interval') == 0:
-                print("Model saved")
+                print(f'  [save] model saved at epoch {epoch}')
                 self.save_state(os.path.join(self.exp.get_from_config('model_path'), 'models', 'epoch_' + str(self.exp.currentStep)))
             self.conclude_epoch()
             self.exp.increase_epoch()
