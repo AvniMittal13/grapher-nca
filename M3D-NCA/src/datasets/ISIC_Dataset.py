@@ -22,10 +22,13 @@ class ISIC2018_Dataset(Dataset_Base):
         Returns:
             dic: {patient_id: {0: (filename, patient_id, 0)}}
         """
+        IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
         dir_files = sorted(os.listdir(path))
         dic = {}
         for f in dir_files:
             if f.startswith('.'):
+                continue
+            if os.path.splitext(f)[1].lower() not in IMAGE_EXTS:
                 continue
             # Extract patient ID (e.g., ISIC_0000000 from ISIC_0000000.jpg or ISIC_0000000_segmentation.png)
             patient_id = f.split('_segmentation')[0]
