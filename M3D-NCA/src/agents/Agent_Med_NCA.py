@@ -241,16 +241,20 @@ class Agent_Med_NCA(Agent_Multi_NCA):
 
 
     def resize4d(self, img, size=(64,64), factor=4, label=False):
-        r"""Resize input image
+        r"""Resize a [B, H, W, C] channel-last image batch to (size[0], size[1]).
+            Uses F.interpolate (bilinear for images, nearest for labels) which is
+            orders of magnitude faster than tio.Resize, which misinterprets the
+            batch/channel dimensions as a 3D medical volume and performs a slow
+            3D volumetric resize via SimpleITK on CPU.
             #Args
-                img: 4d image to rescale
-                size: image size
-                factor: scaling factor
-                label: is Label?
+                img: [B, H, W, C] tensor
+                size: (H_out, W_out) target spatial size
+                factor: unused (kept for API compatibility)
+                label: if True use nearest-neighbour (for masks)
         """
-        if label:
-            transform = tio.Resize((size[0], size[1], -1), image_interpolation='NEAREST')
-        else:
-            transform = tio.Resize((size[0], size[1], -1))
-        img = transform(img)
-        return img
+        # F.interpolate expects [B, C, H, W] — permute in and back out
+        img = img.permute(0, 3, 1, 2).float()          # [B, C, H, W]
+        mode = 'nearest' if label else 'bilinear'
+        align = None if label else False
+        img = F.interpolate(img, size=size, mode=mode, align_corners=align)
+        return img.permute(0, 2, 3, 1)                 # [B, H, W, C]
