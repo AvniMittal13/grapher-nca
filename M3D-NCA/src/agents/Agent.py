@@ -183,10 +183,26 @@ class BaseAgent():
                 dataloader (Dataloader): contains training data
                 loss_f (nn.Model): The loss for training"""
         import time
+
+        # ── Device verification ──────────────────────────────────────────
+        dev = self.device
+        cuda_available = torch.cuda.is_available()
+        print(f'Device: {dev}  |  CUDA available: {cuda_available}')
+        if cuda_available:
+            print(f'GPU: {torch.cuda.get_device_name(dev)}  |  '
+                  f'Memory: {torch.cuda.get_device_properties(dev).total_mem / 1024**3:.1f} GB')
+        if isinstance(self.model, list):
+            for i, m in enumerate(self.model):
+                p = next(m.parameters())
+                print(f'  model[{i}] on: {p.device}')
+        else:
+            print(f'  model on: {next(self.model.parameters()).device}')
+
         n_batches = len(dataloader)
         n_epochs = self.exp.get_max_steps()
         print(f'Training: {n_epochs} epochs | {len(dataloader.dataset)} samples | {n_batches} batches/epoch')
-        print('-' * 60)
+        print('-' * 70)
+
         for epoch in range(self.exp.currentStep, n_epochs + 1):
             t0 = time.time()
             loss_log = {}
@@ -201,14 +217,26 @@ class BaseAgent():
             print(f'\nEpoch {epoch}/{n_epochs}  lr={lr:.2e}')
 
             for i, data in enumerate(dataloader):
+                t_batch = time.time()
                 loss_item = self.batch_step(data, loss_f)
                 for key in loss_item.keys():
                     loss_log[key].append(loss_item[key])
 
-                if (i + 1) % 10 == 0 or (i + 1) == n_batches:
-                    running = {k: sum(loss_log[k]) / len(loss_log[k]) for k in loss_log if loss_log[k]}
-                    loss_str = '  '.join(f'loss[{k}]={v:.4f}' for k, v in running.items())
-                    print(f'  batch {i+1}/{n_batches}  {loss_str}')
+                # ── Per-batch: loss + GPU stats ──────────────────────────
+                batch_loss_str = '  '.join(f'loss[{k}]={v:.4f}' for k, v in loss_item.items())
+                if not loss_item:
+                    batch_loss_str = 'NO LOSS (target empty?)'
+                gpu_str = ''
+                if cuda_available:
+                    mem_alloc = torch.cuda.memory_allocated(dev) / 1024**2
+                    mem_reserved = torch.cuda.memory_reserved(dev) / 1024**2
+                    try:
+                        util = torch.cuda.utilization(dev)
+                        gpu_str = f'  | GPU util={util}%  mem={mem_alloc:.0f}/{mem_reserved:.0f}MB'
+                    except Exception:
+                        gpu_str = f'  | GPU mem={mem_alloc:.0f}/{mem_reserved:.0f}MB'
+                elapsed_batch = time.time() - t_batch
+                print(f'  batch {i+1}/{n_batches}  {batch_loss_str}  ({elapsed_batch:.2f}s){gpu_str}')
 
             elapsed = time.time() - t0
             self.intermediate_results(epoch, loss_log)

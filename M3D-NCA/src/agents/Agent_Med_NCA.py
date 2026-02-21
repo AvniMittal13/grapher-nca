@@ -154,10 +154,10 @@ class Agent_Med_NCA(Agent_Multi_NCA):
         """
         id, inputs, targets = data
 
-        # Create down-scaled image
+        # Create down-scaled image – GPU-native resize (no CPU bounce)
         down_scaled_size = (int(inputs.shape[1] / 4), int(inputs.shape[2] / 4))
-        inputs_loc = self.resize4d(inputs.cpu(), size=down_scaled_size).to(self.exp.get_from_config('device')) 
-        targets_loc = self.resize4d(targets.cpu(), size=down_scaled_size).to(self.exp.get_from_config('device'))
+        inputs_loc = self._resize_on_device(inputs, down_scaled_size, mode='bilinear')
+        targets_loc = self._resize_on_device(targets, down_scaled_size, mode='nearest')
 
         # for visualization
         if returnInference:
@@ -240,8 +240,24 @@ class Agent_Med_NCA(Agent_Multi_NCA):
             return outputs[..., self.input_channels:self.input_channels+self.output_channels], targets_loc, inference
 
 
+    @staticmethod
+    def _resize_on_device(img, size, mode='bilinear'):
+        r"""Resize a [B, H, W, C] tensor on its current device using F.interpolate.
+            #Args
+                img: [B, H, W, C] tensor (channel-last, NCA convention)
+                size: (H', W') target spatial size
+                mode: 'bilinear' for images, 'nearest' for binary masks
+        """
+        # F.interpolate expects [B, C, H, W]
+        x = img.permute(0, 3, 1, 2)
+        if mode == 'bilinear':
+            x = F.interpolate(x, size=size, mode='bilinear', align_corners=False)
+        else:
+            x = F.interpolate(x, size=size, mode='nearest')
+        return x.permute(0, 2, 3, 1)  # back to [B, H, W, C]
+
     def resize4d(self, img, size=(64,64), factor=4, label=False):
-        r"""Resize input image
+        r"""Resize input image (legacy – prefer _resize_on_device for GPU tensors)
             #Args
                 img: 4d image to rescale
                 size: image size

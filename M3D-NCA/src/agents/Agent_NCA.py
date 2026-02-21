@@ -105,8 +105,8 @@ class Agent_NCA(BaseAgent):
                 targets (tensor): Target of model
         """
         id, inputs, targets = data
-        inputs, targets = inputs.type(torch.FloatTensor), targets.type(torch.FloatTensor)
-        inputs, targets = inputs.to(self.device), targets.to(self.device)
+        inputs = inputs.to(device=self.device, dtype=torch.float32)
+        targets = targets.to(device=self.device, dtype=torch.float32)
         inputs = self.make_seed(inputs)
         if not eval:
             if self.exp.get_from_config('Persistence'):
