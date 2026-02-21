@@ -154,10 +154,10 @@ class Agent_Med_NCA(Agent_Multi_NCA):
         """
         id, inputs, targets = data
 
-        # Create down-scaled image
+        # Create down-scaled image (keep on GPU throughout)
         down_scaled_size = (int(inputs.shape[1] / 4), int(inputs.shape[2] / 4))
-        inputs_loc = self.resize4d(inputs.cpu(), size=down_scaled_size).to(self.exp.get_from_config('device')) 
-        targets_loc = self.resize4d(targets.cpu(), size=down_scaled_size).to(self.exp.get_from_config('device'))
+        inputs_loc = self.resize4d(inputs, size=down_scaled_size)
+        targets_loc = self.resize4d(targets, size=down_scaled_size, label=True)
 
         # for visualization
         if returnInference:
@@ -246,12 +246,17 @@ class Agent_Med_NCA(Agent_Multi_NCA):
             orders of magnitude faster than tio.Resize, which misinterprets the
             batch/channel dimensions as a 3D medical volume and performs a slow
             3D volumetric resize via SimpleITK on CPU.
+            Operates on GPU if input is on GPU (preserves device placement).
             #Args
-                img: [B, H, W, C] tensor
+                img: [B, H, W, C] tensor (GPU or CPU)
                 size: (H_out, W_out) target spatial size
                 factor: unused (kept for API compatibility)
                 label: if True use nearest-neighbour (for masks)
         """
+        # Ensure img is on the right device (same as model)
+        device = self.exp.get_from_config('device')
+        img = img.to(device)
+        
         # F.interpolate expects [B, C, H, W] — permute in and back out
         img = img.permute(0, 3, 1, 2).float()          # [B, C, H, W]
         mode = 'nearest' if label else 'bilinear'
